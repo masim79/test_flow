@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.market.models import PriceUpdate
+from app.market.models import PriceUpdate, normalize_ticker
 
 
 class TestPriceUpdate:
@@ -68,6 +68,8 @@ class TestPriceUpdate:
         assert result["change"] == 0.50
         assert result["change_percent"] == 0.2632  # (0.50 / 190.00) * 100
         assert result["direction"] == "up"
+        assert result["reference_price"] is None
+        assert result["day_change_percent"] == 0.0
 
     def test_immutability(self):
         """Test that PriceUpdate is immutable."""
@@ -75,3 +77,33 @@ class TestPriceUpdate:
 
         with pytest.raises(AttributeError):
             update.price = 200.00  # Should raise error
+
+    def test_day_change_percent_up(self):
+        update = PriceUpdate(ticker="AAPL", price=102.0, previous_price=101.0, reference_price=100.0)
+        assert update.day_change_percent == 2.0
+
+    def test_day_change_percent_no_reference(self):
+        update = PriceUpdate(ticker="AAPL", price=102.0, previous_price=101.0, reference_price=None)
+        assert update.day_change_percent == 0.0
+
+    def test_day_change_percent_zero_reference(self):
+        update = PriceUpdate(ticker="AAPL", price=102.0, previous_price=101.0, reference_price=0.0)
+        assert update.day_change_percent == 0.0
+
+
+class TestNormalizeTicker:
+    """Unit tests for normalize_ticker."""
+
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [("aapl", "AAPL"), (" BRK.B ", "BRK.B"), ("bf-b", "BF-B"), ("NVDA", "NVDA")],
+    )
+    def test_normalizes_valid_tickers(self, raw, expected):
+        assert normalize_ticker(raw) == expected
+
+    @pytest.mark.parametrize(
+        "raw", ["", "  ", "1ABC", "AA PL", "TOOLONGTICKER", "$AAPL", None]
+    )
+    def test_rejects_invalid_tickers(self, raw):
+        with pytest.raises(ValueError):
+            normalize_ticker(raw)

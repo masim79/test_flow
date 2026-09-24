@@ -77,3 +77,42 @@ class TestFactory:
 
         assert isinstance(source, MassiveDataSource)
         assert source._cache is cache
+
+    def test_massive_default_poll_interval(self):
+        """Default poll interval is 15s when MASSIVE_POLL_INTERVAL is unset."""
+        cache = PriceCache()
+
+        with patch.dict(os.environ, {"MASSIVE_API_KEY": "test-key"}, clear=True):
+            source = create_market_data_source(cache)
+
+        assert source._interval == 15.0
+
+    def test_massive_custom_poll_interval(self):
+        """MASSIVE_POLL_INTERVAL overrides the default poll interval."""
+        cache = PriceCache()
+
+        env = {"MASSIVE_API_KEY": "test-key", "MASSIVE_POLL_INTERVAL": "5"}
+        with patch.dict(os.environ, env, clear=True):
+            source = create_market_data_source(cache)
+
+        assert source._interval == 5.0
+
+    def test_massive_poll_interval_floor(self):
+        """MASSIVE_POLL_INTERVAL is floored at 1 second."""
+        cache = PriceCache()
+
+        env = {"MASSIVE_API_KEY": "test-key", "MASSIVE_POLL_INTERVAL": "0.1"}
+        with patch.dict(os.environ, env, clear=True):
+            source = create_market_data_source(cache)
+
+        assert source._interval == 1.0
+
+    def test_massive_invalid_poll_interval_falls_back_to_default(self):
+        """A non-numeric MASSIVE_POLL_INTERVAL logs a warning and uses the default."""
+        cache = PriceCache()
+
+        env = {"MASSIVE_API_KEY": "test-key", "MASSIVE_POLL_INTERVAL": "not-a-number"}
+        with patch.dict(os.environ, env, clear=True):
+            source = create_market_data_source(cache)
+
+        assert source._interval == 15.0

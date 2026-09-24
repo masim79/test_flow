@@ -2,8 +2,19 @@
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass, field
+
+_TICKER_RE = re.compile(r"^[A-Z][A-Z0-9.\-]{0,9}$")  # AAPL, BRK.B, BF-B
+
+
+def normalize_ticker(raw: str) -> str:
+    """Upper-case and validate a ticker symbol. Raises ValueError if invalid."""
+    ticker = (raw or "").strip().upper()
+    if not _TICKER_RE.fullmatch(ticker):
+        raise ValueError(f"Invalid ticker symbol: {raw!r}")
+    return ticker
 
 
 @dataclass(frozen=True, slots=True)
@@ -14,6 +25,10 @@ class PriceUpdate:
     price: float
     previous_price: float
     timestamp: float = field(default_factory=time.time)  # Unix seconds
+    # Price the "daily change" is measured against:
+    #   simulator → the ticker's first price this session (seed price)
+    #   Massive   → previous trading day's close (snap.prev_day.close)
+    reference_price: float | None = None
 
     @property
     def change(self) -> float:
@@ -26,6 +41,13 @@ class PriceUpdate:
         if self.previous_price == 0:
             return 0.0
         return round((self.price - self.previous_price) / self.previous_price * 100, 4)
+
+    @property
+    def day_change_percent(self) -> float:
+        """Percent change vs. the reference price. Drives the watchlist 'daily %' column."""
+        if not self.reference_price:
+            return 0.0
+        return round((self.price - self.reference_price) / self.reference_price * 100, 4)
 
     @property
     def direction(self) -> str:
@@ -46,4 +68,6 @@ class PriceUpdate:
             "change": self.change,
             "change_percent": self.change_percent,
             "direction": self.direction,
+            "reference_price": self.reference_price,
+            "day_change_percent": self.day_change_percent,
         }

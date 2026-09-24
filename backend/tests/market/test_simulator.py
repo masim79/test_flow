@@ -1,5 +1,7 @@
 """Tests for GBMSimulator."""
 
+import numpy as np
+
 from app.market.seed_prices import SEED_PRICES
 from app.market.simulator import GBMSimulator
 
@@ -129,3 +131,43 @@ class TestGBMSimulator:
         if '.' in price_str:
             decimal_part = price_str.split('.')[1]
             assert len(decimal_part) <= 2
+
+    def test_full_default_watchlist_cholesky_succeeds(self):
+        """The Cholesky decomposition must succeed for the full 10-ticker
+        default watchlist, not just the 1-2 ticker subsets used elsewhere.
+        A malformed correlation matrix (e.g. not positive semi-definite)
+        would raise here.
+        """
+        sim = GBMSimulator(tickers=list(SEED_PRICES.keys()))
+        assert sim._cholesky is not None
+        assert sim._cholesky.shape == (len(SEED_PRICES), len(SEED_PRICES))
+
+        for _ in range(100):
+            prices = sim.step()
+            assert set(prices.keys()) == set(SEED_PRICES.keys())
+            assert all(p > 0 for p in prices.values())
+
+    def test_prices_stay_positive_and_near_seed_over_an_hour(self):
+        """An hour of ticks (no shock events) shouldn't drift wildly from the seed."""
+        sim = GBMSimulator(tickers=["AAPL"], event_probability=0.0)
+        price = None
+        for _ in range(7200):  # 1 hour of 500ms ticks
+            price = sim.step()["AAPL"]
+            assert price > 0
+        # sigma_hour ~= 0.22 * sqrt(3600 / 5_896_800) ~= 0.5%; 10% is a generous margin
+        assert 0.9 * 190 < price < 1.1 * 190
+
+    def test_tech_pairs_are_correlated(self):
+        """Log returns of two tech tickers should be positively correlated,
+        matching the configured intra-tech correlation of 0.6."""
+        np.random.seed(0)
+        sim = GBMSimulator(tickers=["AAPL", "MSFT"], event_probability=0.0)
+        prev = {"AAPL": sim.get_price("AAPL"), "MSFT": sim.get_price("MSFT")}
+        returns_aapl, returns_msft = [], []
+        for _ in range(4000):
+            sim.step()
+            returns_aapl.append(np.log(sim.get_price("AAPL") / prev["AAPL"]))
+            returns_msft.append(np.log(sim.get_price("MSFT") / prev["MSFT"]))
+            prev = {"AAPL": sim.get_price("AAPL"), "MSFT": sim.get_price("MSFT")}
+        correlation = np.corrcoef(returns_aapl, returns_msft)[0, 1]
+        assert 0.5 < correlation < 0.7

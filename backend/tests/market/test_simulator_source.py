@@ -59,6 +59,39 @@ class TestSimulatorDataSource:
 
         await source.stop()
 
+    async def test_add_ticker_is_case_insensitive(self):
+        """Lower-case tickers must normalize to the same series as upper-case ones."""
+        cache = PriceCache()
+        source = SimulatorDataSource(price_cache=cache, update_interval=0.1)
+        await source.start(["AAPL"])
+
+        await source.add_ticker("tsla")
+        assert source.get_tickers() == ["AAPL", "TSLA"]
+        assert cache.get("TSLA") is not None
+        assert cache.get("tsla") is None
+
+        await source.stop()
+
+    async def test_start_normalizes_tickers(self):
+        cache = PriceCache()
+        source = SimulatorDataSource(price_cache=cache, update_interval=0.1)
+        await source.start(["aapl", " tsla "])
+
+        assert source.get_tickers() == ["AAPL", "TSLA"]
+
+        await source.stop()
+
+    async def test_remove_ticker_is_case_insensitive(self):
+        cache = PriceCache()
+        source = SimulatorDataSource(price_cache=cache, update_interval=0.1)
+        await source.start(["AAPL", "TSLA"])
+
+        await source.remove_ticker("tsla")
+        assert "TSLA" not in source.get_tickers()
+        assert cache.get("TSLA") is None
+
+        await source.stop()
+
     async def test_remove_ticker(self):
         """Test removing a ticker."""
         cache = PriceCache()
